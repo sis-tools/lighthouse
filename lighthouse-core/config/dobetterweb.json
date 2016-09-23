@@ -5,6 +5,7 @@
     "gatherers": [
       "../gather/gatherers/dobetterweb/appcache",
       "../gather/gatherers/dobetterweb/websql",
+      "../gather/gatherers/https",
       "../gather/gatherers/same-origin-resources"
     ]
   }],
@@ -12,7 +13,8 @@
   "audits": [
     "../audits/dobetterweb/appcache-manifest",
     "../audits/dobetterweb/no-websql",
-    "../audits/dobetterweb/uses-http2"
+    "../audits/dobetterweb/uses-http2",
+    "../audits/is-on-https"
   ],
 
   "aggregations": [{
@@ -31,8 +33,11 @@
         }
       }
     }, {
-      "name": "Performance",
+      "name": "Using modern protocols",
       "criteria": {
+        "is-on-https": {
+          "rawValue": false
+        },
         "uses-http2": {
           "rawValue": false,
           "description": "Resources made by this application should be severed over HTTP/2 for improved performance."
