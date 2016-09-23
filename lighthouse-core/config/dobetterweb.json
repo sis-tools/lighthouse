@@ -5,7 +5,7 @@
     "gatherers": [
       "../gather/gatherers/dobetterweb/appcache",
       "../gather/gatherers/dobetterweb/websql",
-      "../gather/gatherers/http2-resources"
+      "../gather/gatherers/same-origin-resources"
     ]
   }],
 

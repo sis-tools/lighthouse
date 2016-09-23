@@ -34,9 +34,9 @@ class UsesHTTP2Audit extends Audit {
     return {
       category: 'Performance',
       name: 'uses-http2',
-      // optimalValue: 0,
       description: 'Site resources use HTTP/2',
-      requiredArtifacts: ['HTTP2Resources']
+      helpText: 'See <a href="https://http2.github.io/faq/" target="_blank">HTTP2 FAQ</a>.',
+      requiredArtifacts: ['SameOriginResources']
     };
   }
 
@@ -45,10 +45,21 @@ class UsesHTTP2Audit extends Audit {
    * @return {!AuditResult}
    */
   static audit(artifacts) {
+    if (typeof artifacts.SameOriginResources === 'undefined' ||
+        !Array.isArray(artifacts.SameOriginResources)) {
+      return UsesHTTP2Audit.generateAuditResult({
+        rawValue: -1,
+        debugString: 'SameOriginResources gatherer did not run'
+      });
+    }
 
-    const resources = artifacts.HTTP2Resources;
+    // Filter the non http/2 resources.
+    const resources = artifacts.SameOriginResources.filter(record => {
+      return /HTTP\/[01][\.\d]?/i.test(record.protocol);
+    });
+
     const displayValue = (resources.length ?
-        `${resources.length} resources are not served over h2` : '');
+        `${resources.length} resources were not served over h2` : '');
 
     return UsesHTTP2Audit.generateAuditResult({
       rawValue: resources.length === 0,

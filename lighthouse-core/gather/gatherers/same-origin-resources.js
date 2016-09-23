@@ -20,26 +20,25 @@
 const url = require('url');
 const Gatherer = require('./gatherer');
 
-class HTTP2Resources extends Gatherer {
+class SameOriginResources extends Gatherer {
 
   afterPass(options, tracingData) {
     const finalHost = url.parse(options.url).host;
     const initialHost = url.parse(options.initialUrl).host;
 
-    // Find requests made to resources on this origin which are http/1.1 or older.
-    const oldProtocols = tracingData.networkRecords.reduce((prev, record) => {
+    // Find requests that are on the same origin as the page.
+    const results = tracingData.networkRecords.reduce((prev, record) => {
       const requestHost = url.parse(record.url).host;
       const sameOrigin = requestHost === finalHost ||
                          requestHost === initialHost;
-      if (record.protocol.match(/HTTP\/[01][\.\d]?/i) && sameOrigin) {
-        // prev.push({url: record.url, protocol: record.protocol});
+      if (sameOrigin) {
         prev.push(record);
       }
       return prev;
     }, []);
 
-    this.artifact = oldProtocols;
+    this.artifact = results;
   }
 }
 
-module.exports = HTTP2Resources;
+module.exports = SameOriginResources;
