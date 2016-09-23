@@ -20,7 +20,7 @@ const assert = require('assert');
 
 /* eslint-env mocha */
 
-describe.only('Resources are fetched over http/2', () => {
+describe('Resources are fetched over http/2', () => {
   it('fails when no input present', () => {
     const auditResult = UsesHTTP2Audit.audit({});
     assert.equal(auditResult.rawValue, -1);
