@@ -1,16 +1,18 @@
 {
   "passes": [{
-    "network": false,
+    "network": true,
     "loadPage": true,
     "gatherers": [
       "../gather/gatherers/dobetterweb/appcache",
-      "../gather/gatherers/dobetterweb/websql"
+      "../gather/gatherers/dobetterweb/websql",
+      "../gather/gatherers/http2-resources"
     ]
   }],
 
   "audits": [
     "../audits/dobetterweb/appcache-manifest",
-    "../audits/dobetterweb/no-websql"
+    "../audits/dobetterweb/no-websql",
+    "../audits/dobetterweb/uses-http2"
   ],
 
   "aggregations": [{
@@ -26,6 +28,14 @@
         },
         "no-websql": {
           "rawValue": false
+        }
+      }
+    }, {
+      "name": "Performance",
+      "criteria": {
+        "uses-http2": {
+          "rawValue": false,
+          "description": "Resources made by this application should be severed over HTTP/2 for improved performance."
         }
       }
     }]
