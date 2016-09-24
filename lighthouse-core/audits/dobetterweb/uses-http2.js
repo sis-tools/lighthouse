@@ -53,8 +53,6 @@ class UsesHTTP2Audit extends Audit {
       });
     }
 
-    console.log(artifacts.SameOriginResources.map(r => r.protocol))
-
     // Filter the non h2 resources.
     const resources = artifacts.SameOriginResources.filter(record => {
       return /HTTP\/[01][\.\d]?/i.test(record.protocol);
