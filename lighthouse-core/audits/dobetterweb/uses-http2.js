@@ -35,7 +35,7 @@ class UsesHTTP2Audit extends Audit {
       category: 'Performance',
       name: 'uses-http2',
       description: 'Site uses HTTP/2 for its own resources',
-      helpText: 'h2 offers many benefits over its predecessor HTTP/1.1: binary, multiplexing, server push, etc. See <a href="https://http2.github.io/faq/" target="_blank">this FAQ</a> for more information.',
+      helpText: 'h2 offers many benefits over its http/1.1 predecessor: binary, multiplexing, server push, etc. See <a href="https://http2.github.io/faq/" target="_blank">this FAQ</a> for more information.',
       requiredArtifacts: ['SameOriginResources']
     };
   }
