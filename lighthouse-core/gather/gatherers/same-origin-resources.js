@@ -27,15 +27,12 @@ class SameOriginResources extends Gatherer {
     const initialHost = url.parse(options.initialUrl).host;
 
     // Find requests that are on the same origin as the page.
-    const results = tracingData.networkRecords.reduce((prev, record) => {
+    const results = tracingData.networkRecords.filter(record => {
       const requestHost = url.parse(record.url).host;
       const sameOrigin = requestHost === finalHost ||
                          requestHost === initialHost;
-      if (sameOrigin) {
-        prev.push(record);
-      }
-      return prev;
-    }, []);
+      return sameOrigin;
+    });
 
     this.artifact = results;
   }

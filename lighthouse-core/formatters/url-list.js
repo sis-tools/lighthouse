@@ -30,7 +30,12 @@ class UrlList extends Formatter {
           if (!Array.isArray(resources)) {
             return '';
           }
-          // TODO
+
+          let output = '';
+          resources.forEach(resource => {
+            output += `      ${resource.url} (${resource.protocol})\n`;
+          });
+          return output;
         };
 
       case 'html':

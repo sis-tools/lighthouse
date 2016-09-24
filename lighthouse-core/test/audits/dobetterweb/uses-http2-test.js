@@ -41,8 +41,8 @@ describe('Resources are fetched over http/2', () => {
   it('passes when all resources were requested via http/2', () => {
     const auditResult = UsesHTTP2Audit.audit({
       SameOriginResources: [
-        {url: 'http://example.com/one', protocol: 'http/2'},
-        {url: 'http://example.com/two', protocol: 'http/2.0'}
+        {url: 'http://example.com/one', protocol: 'h2'},
+        {url: 'http://example.com/two', protocol: 'h2'}
       ]
     });
     assert.equal(auditResult.rawValue, true);

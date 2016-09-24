@@ -34,8 +34,8 @@ class UsesHTTP2Audit extends Audit {
     return {
       category: 'Performance',
       name: 'uses-http2',
-      description: 'Site resources use HTTP/2',
-      helpText: 'See <a href="https://http2.github.io/faq/" target="_blank">HTTP2 FAQ</a>.',
+      description: 'Site uses HTTP/2 for its own resources',
+      helpText: 'h2 offers many benefits over its predecessor HTTP/1.1: binary, multiplexing, server push, etc. See <a href="https://http2.github.io/faq/" target="_blank">this FAQ</a> for more information.',
       requiredArtifacts: ['SameOriginResources']
     };
   }
@@ -53,7 +53,9 @@ class UsesHTTP2Audit extends Audit {
       });
     }
 
-    // Filter the non http/2 resources.
+    console.log(artifacts.SameOriginResources.map(r => r.protocol))
+
+    // Filter the non h2 resources.
     const resources = artifacts.SameOriginResources.filter(record => {
       return /HTTP\/[01][\.\d]?/i.test(record.protocol);
     });
