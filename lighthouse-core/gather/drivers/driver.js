@@ -23,7 +23,7 @@ const parseURL = require('url').parse;
 
 const log = require('../../lib/log.js');
 
-const MAX_WAIT_FOR_LOAD_EVENT = 25 * 1000;
+const MAX_WAIT_FOR_FULLY_LOADED = 25 * 1000;
 const PAUSE_AFTER_LOAD = 500;
 
 class Driver {
@@ -181,7 +181,7 @@ class Driver {
       this.sendCommand('Runtime.evaluate', {
         expression,
         includeCommandLineAPI: true
-      });
+      }).catch(reject);
 
       // If this gets to 60s and it hasn't been resolved, reject the Promise.
       asyncTimeout = setTimeout(
@@ -194,22 +194,22 @@ class Driver {
   getSecurityState() {
     return new Promise((resolve, reject) => {
       this.once('Security.securityStateChanged', data => {
-        this.sendCommand('Security.disable');
-        resolve(data);
+        this.sendCommand('Security.disable')
+          .then(_ => resolve(data), reject);
       });
 
-      this.sendCommand('Security.enable');
+      this.sendCommand('Security.enable').catch(reject);
     });
   }
 
   getServiceWorkerVersions() {
     return new Promise((resolve, reject) => {
       this.once('ServiceWorker.workerVersionUpdated', data => {
-        this.sendCommand('ServiceWorker.disable');
-        resolve(data);
+        this.sendCommand('ServiceWorker.disable')
+          .then(_ => resolve(data), reject);
       });
 
-      this.sendCommand('ServiceWorker.enable');
+      this.sendCommand('ServiceWorker.enable').catch(reject);
     });
   }
 
@@ -232,10 +232,134 @@ class Driver {
   }
 
   /**
+   * Returns a promise that resolves when the network has been idle for
+   * `pauseAfterLoadMs` ms and a method to cancel internal network listeners and
+   * timeout.
+   * @param {string} pauseAfterLoadMs
+   * @return {{promise: !Promise, cancel: function()}}
+   * @private
+   */
+  _waitForNetworkIdle(pauseAfterLoadMs) {
+    let idleTimeout;
+    let cancel;
+
+    const promise = new Promise((resolve, reject) => {
+      const onIdle = () => {
+        // eslint-disable-next-line no-use-before-define
+        this._networkRecorder.once('networkbusy', onBusy);
+        idleTimeout = setTimeout(_ => {
+          cancel();
+          resolve();
+        }, pauseAfterLoadMs);
+      };
+
+      const onBusy = () => {
+        this._networkRecorder.once('networkidle', onIdle);
+        clearTimeout(idleTimeout);
+      };
+
+      cancel = () => {
+        clearTimeout(idleTimeout);
+        this._networkRecorder.removeListener('networkbusy', onBusy);
+        this._networkRecorder.removeListener('networkidle', onIdle);
+      };
+
+      if (this._networkRecorder.isIdle()) {
+        onIdle();
+      } else {
+        onBusy();
+      }
+    });
+
+    return {
+      promise,
+      cancel
+    };
+  }
+
+  /**
+   * Return a promise that resolves `pauseAfterLoadMs` after the load event
+   * fires and a method to cancel internal listeners and timeout.
+   * @param {number} pauseAfterLoadMs
+   * @return {{promise: !Promise, cancel: function()}}
+   * @private
+   */
+  _waitForLoadEvent(pauseAfterLoadMs) {
+    let loadListener;
+    let loadTimeout;
+
+    const promise = new Promise((resolve, reject) => {
+      loadListener = function() {
+        loadTimeout = setTimeout(resolve, pauseAfterLoadMs);
+      };
+      this.once('Page.loadEventFired', loadListener);
+    });
+    const cancel = () => {
+      this.off('Page.loadEventFired', loadListener);
+      clearTimeout(loadTimeout);
+    };
+
+    return {
+      promise,
+      cancel
+    };
+  }
+
+  /**
+   * Returns a promise that resolves when:
+   * - it's been pauseAfterLoadMs milliseconds after both onload and the network
+   * has gone idle, or
+   * - MAX_WAIT_FOR_FULLY_LOADED milliseconds have passed.
+   * See https://github.com/GoogleChrome/lighthouse/issues/627 for more.
+   * @param {number} pauseAfterLoadMs
+   * @return {!Promise}
+   * @private
+   */
+  _waitForFullyLoaded(pauseAfterLoadMs) {
+    let maxTimeoutHandle;
+
+    // Listener for onload. Resolves pauseAfterLoadMs ms after load.
+    const waitForLoadEvent = this._waitForLoadEvent(pauseAfterLoadMs);
+    // Network listener. Resolves when the network has been idle for pauseAfterLoadMs.
+    const waitForNetworkIdle = this._waitForNetworkIdle(pauseAfterLoadMs);
+
+    // Wait for both load promises. Resolves on cleanup function the clears load
+    // timeout timer.
+    const loadPromise = Promise.all([
+      waitForLoadEvent.promise,
+      waitForNetworkIdle.promise
+    ]).then(_ => {
+      return function() {
+        log.verbose('Driver', 'loadEventFired and network considered idle');
+        clearTimeout(maxTimeoutHandle);
+      };
+    });
+
+    // Last resort timeout. Resolves MAX_WAIT_FOR_FULLY_LOADED ms from now on
+    // cleanup function that removes loadEvent and network idle listeners.
+    const maxTimeoutPromise = new Promise((resolve, reject) => {
+      maxTimeoutHandle = setTimeout(resolve, MAX_WAIT_FOR_FULLY_LOADED);
+    }).then(_ => {
+      return function() {
+        log.warn('Driver', 'Timed out waiting for page load. Moving on...');
+        waitForLoadEvent.cancel();
+        waitForNetworkIdle.cancel();
+      };
+    });
+
+    // Wait for load or timeout and run the cleanup function the winner returns.
+    return Promise.race([
+      loadPromise,
+      maxTimeoutPromise
+    ]).then(cleanup => cleanup());
+  }
+
+  /**
    * Navigate to the given URL. Use of this method directly isn't advised: if
    * the current page is already at the given URL, navigation will not occur and
-   * so the returned promise will never resolve. See https://github.com/GoogleChrome/lighthouse/pull/185
-   * for one possible workaround.
+   * so the returned promise will only resolve after the MAX_WAIT_FOR_FULLY_LOADED
+   * timeout. See https://github.com/GoogleChrome/lighthouse/pull/185 for one
+   * possible workaround.
    * @param {string} url
    * @param {!Object} options
    * @return {!Promise}
@@ -243,39 +367,13 @@ class Driver {
   gotoURL(url, options) {
     const _options = options || {};
     const waitForLoad = _options.waitForLoad || false;
-    const disableJavaScript = _options.disableJavaScript || false;
+    const disableJS = _options.disableJavaScript || false;
     const pauseAfterLoadMs = (_options.flags && _options.flags.pauseAfterLoad) || PAUSE_AFTER_LOAD;
+
     return this.sendCommand('Page.enable')
-    .then(_ => this.sendCommand('Emulation.setScriptExecutionDisabled', {value: disableJavaScript}))
-    .then(_ => this.sendCommand('Page.navigate', {url}))
-    .then(_ => {
-      return new Promise((resolve, reject) => {
-        this.url = url;
-
-        if (!waitForLoad) {
-          return resolve();
-        }
-
-        // Resolve PAUSE_AFTER_LOAD milliseconds after onload...
-        let loadTimeout;
-        const loadListener = function() {
-          setTimeout(_ => {
-            if (loadTimeout) {
-              clearTimeout(loadTimeout);
-            }
-            resolve();
-          }, pauseAfterLoadMs);
-        };
-        this.once('Page.loadEventFired', loadListener);
-
-        // ...or MAX_WAIT_FOR_LOAD_EVENT ms from now in case the page load times out.
-        loadTimeout = setTimeout(_ => {
-          log.warn('Driver', 'Timed out waiting for page load. Moving on...');
-          this.off('Page.loadEventFired', loadListener);
-          resolve();
-        }, MAX_WAIT_FOR_LOAD_EVENT);
-      });
-    });
+      .then(_ => this.sendCommand('Emulation.setScriptExecutionDisabled', {value: disableJS}))
+      .then(_ => this.sendCommand('Page.navigate', {url}))
+      .then(_ => waitForLoad && this._waitForFullyLoaded(pauseAfterLoadMs));
   }
 
   reloadForCleanStateIfNeeded() {
@@ -317,11 +415,11 @@ class Driver {
       // When the tracing has ended this will fire with a stream handle.
       this.once('Tracing.tracingComplete', streamHandle => {
         this._readTraceFromStream(streamHandle)
-            .then(traceContents => resolve(traceContents));
+            .then(traceContents => resolve(traceContents), reject);
       });
 
       // Issue the command to stop tracing.
-      this.sendCommand('Tracing.end');
+      this.sendCommand('Tracing.end').catch(reject);
     });
   }
 
@@ -352,7 +450,7 @@ class Driver {
         return this.sendCommand('IO.read', readArguments).then(onChunkRead);
       };
 
-      this.sendCommand('IO.read', readArguments).then(onChunkRead);
+      this.sendCommand('IO.read', readArguments).then(onChunkRead).catch(reject);
     });
   }
 
@@ -370,9 +468,7 @@ class Driver {
       this.on('Network.loadingFailed', this._networkRecorder.onLoadingFailed);
       this.on('Network.resourceChangedPriority', this._networkRecorder.onResourceChangedPriority);
 
-      this.sendCommand('Network.enable').then(_ => {
-        resolve();
-      });
+      this.sendCommand('Network.enable').then(resolve, reject);
     });
   }
 
@@ -444,12 +540,79 @@ class Driver {
     const origin = `${parsedURL.protocol}//${parsedURL.hostname}` +
       (parsedURL.port ? `:${parsedURL.port}` : '');
 
+    // Clear all types of storage except cookies, so the user isn't logged out.
+    //   https://chromedevtools.github.io/debugger-protocol-viewer/tot/Storage/#type-StorageType
+    const typesToClear = [
+      'appcache',
+      // 'cookies',
+      'file_systems',
+      'indexeddb',
+      'local_storage',
+      'shader_cache',
+      'websql',
+      'service_workers',
+      'cache_storage'
+    ].join(',');
+
     return this.sendCommand('Storage.clearDataForOrigin', {
-      origin,
-      storageTypes: 'all',
+      origin: origin,
+      storageTypes: typesToClear
     });
+  }
+
+  /**
+   * Keeps track of calls to a JS function and returns a list of {url, line, col}
+   * of the usage. Should be called before page load (in beforePass).
+   * @param {string} funcName The function name to track ('Date.now', 'console.time').
+   * @return {function(): !Promise<!Array<{url: string, line: number, col: number}>>}
+   *     Call this method when you want results.
+   */
+  captureFunctionCallSites(funcName) {
+    const globalVarToPopulate = `window['__${funcName}StackTraces']`;
+    const collectUsage = () => {
+      return this.evaluateAsync(
+          `__returnResults(Array.from(${globalVarToPopulate}).map(item => JSON.parse(item)))`);
+    };
+
+    const funcBody = captureJSCallUsage.toString();
+
+    this.evaluateScriptOnLoad(`
+        ${globalVarToPopulate} = new Set();
+        (${funcName} = ${funcBody}(${funcName}, ${globalVarToPopulate}))`);
+
+    return collectUsage;
   }
 }
 
-module.exports = Driver;
+/**
+ * Tracks function call usage. Used by captureJSCalls to inject code into the page.
+ * @param {function(...*): *} funcRef The function call to track.
+ * @param {!Set} set An empty set to populate with stack traces. Should be
+ *     on the global object.
+ * @return {function(...*): *} A wrapper around the original function.
+ */
+function captureJSCallUsage(funcRef, set) {
+  const originalFunc = funcRef;
+  const originalPrepareStackTrace = Error.prepareStackTrace;
 
+  return function() {
+    // See v8's Stack Trace API https://github.com/v8/v8/wiki/Stack-Trace-API#customizing-stack-traces
+    Error.prepareStackTrace = function(error, structStackTrace) {
+      const lastCallFrame = structStackTrace[structStackTrace.length - 1];
+      const file = lastCallFrame.getFileName();
+      const line = lastCallFrame.getLineNumber();
+      const col = lastCallFrame.getColumnNumber();
+      return {url: file, line, col}; // return value is e.stack
+    };
+    const e = new Error(`__called ${funcRef.name}__`);
+    set.add(JSON.stringify(e.stack));
+
+    // Restore prepareStackTrace so future errors use v8's formatter and not
+    // our custom one.
+    Error.prepareStackTrace = originalPrepareStackTrace;
+
+    return originalFunc.apply(this, arguments);
+  };
+}
+
+module.exports = Driver;

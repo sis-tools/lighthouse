@@ -1,4 +1,5 @@
 /**
+ * @license
  * Copyright 2016 Google Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,21 +14,29 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/**
+ * @fileoverview Tests whether the page is using console.time().
+ */
+
 'use strict';
 
-/* eslint-env mocha */
+const Gatherer = require('../gatherer');
 
-const URLGather = require('../../../gather/gatherers/url');
-const assert = require('assert');
+class ConsoleTimeUsage extends Gatherer {
 
-describe('URL gatherer', () => {
-  it('returns the correct URL from options', () => {
-    const urlGather = new URLGather();
-    const url = 'https://example.com';
-    urlGather.afterPass({
-      url: url
+  beforePass(options) {
+    this.collectUsage = options.driver.captureFunctionCallSites('console.time');
+  }
+
+  afterPass() {
+    return this.collectUsage().then(consoleTimeUsage => {
+      this.artifact.usage = consoleTimeUsage;
+    }, _ => {
+      this.artifact = -1;
+      return;
     });
+  }
+}
 
-    return assert.equal(urlGather.artifact.finalUrl, url);
-  });
-});
+module.exports = ConsoleTimeUsage;

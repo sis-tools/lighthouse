@@ -1,21 +1,31 @@
 {
   "passes": [{
-    "network": false,
+    "network": true,
     "loadPage": true,
     "gatherers": [
+      "../gather/gatherers/https",
+      "../gather/gatherers/url",
       "../gather/gatherers/dobetterweb/appcache",
+      "../gather/gatherers/dobetterweb/console-time-usage",
+      "../gather/gatherers/dobetterweb/datenow",
+      "../gather/gatherers/dobetterweb/document-write",
       "../gather/gatherers/dobetterweb/websql"
     ]
   }],
 
   "audits": [
     "../audits/dobetterweb/appcache-manifest",
-    "../audits/dobetterweb/no-websql"
+    "../audits/dobetterweb/no-console-time",
+    "../audits/dobetterweb/no-datenow",
+    "../audits/dobetterweb/no-document-write",
+    "../audits/dobetterweb/no-websql",
+    "../audits/dobetterweb/uses-http2",
+    "../audits/is-on-https"
   ],
 
   "aggregations": [{
     "name": "Do Better Web",
-    "description": "We've compiled some recommendations for modernizing your web app.",
+    "description": "We've compiled some recommendations for modernizing your web app and avoiding performance pitfalls.",
     "scored": false,
     "categorizable": true,
     "items": [{
@@ -25,6 +35,34 @@
           "rawValue": false
         },
         "no-websql": {
+          "rawValue": false
+        }
+      }
+    }, {
+      "name": "Using modern protocols",
+      "criteria": {
+        "is-on-https": {
+          "rawValue": false
+        },
+        "uses-http2": {
+          "rawValue": false,
+          "description": "Resources made by this application should be severed over HTTP/2 for improved performance."
+        }
+      }
+    }, {
+      "name": "Using modern JavaScript features",
+      "criteria": {
+        "no-datenow": {
+          "rawValue": false
+        },
+        "no-console-time": {
+          "rawValue": false
+        }
+      }
+    }, {
+      "name": "Avoiding APIs that harm the user experience",
+      "criteria": {
+        "no-document-write": {
           "rawValue": false
         }
       }

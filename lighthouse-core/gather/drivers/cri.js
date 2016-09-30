@@ -89,7 +89,6 @@ class CriDriver extends Driver {
       this._tab = null;
       this._cri = null;
       this._eventEmitter = null;
-      this.url = null;
     });
   }
 
@@ -101,7 +100,7 @@ class CriDriver extends Driver {
    */
   sendCommand(command, params) {
     if (this._cri === null) {
-      throw new Error('connect() must be called before attempting to send a command.');
+      return Promise.reject('connect() must be called before attempting to send a command.');
     }
 
     return new Promise((resolve, reject) => {
