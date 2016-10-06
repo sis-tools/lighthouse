@@ -110,8 +110,9 @@ class Runner {
       // If there are existing audit results, surface those here.
       run = run.then(_ => config.auditResults);
     } else {
-      throw new Error(
+      const err = Error(
           'The config must provide passes and audits, artifacts and audits, or auditResults');
+      return Promise.reject(err);
     }
 
     // Format and aggregate results before returning.
@@ -129,6 +130,7 @@ class Runner {
         }
 
         return {
+          lighthouseVersion: require('../package').version,
           initialUrl: opts.initialUrl,
           url: opts.url,
           audits: formattedAudits,

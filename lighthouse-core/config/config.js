@@ -126,10 +126,10 @@ function validatePasses(passes, audits, rootPath) {
     });
   });
 
-  // Log if multiple passes require trace or network data and could overwrite one another.
+  // Log if multiple passes require trace or network recording and could overwrite one another.
   const usedNames = new Set();
   passes.forEach((pass, index) => {
-    if (!pass.network && !pass.trace) {
+    if (!pass.recordNetwork && !pass.recordTrace) {
       return;
     }
 
@@ -162,50 +162,58 @@ function requireAudits(audits, configPath) {
   const Runner = require('../runner');
   const coreList = Runner.getAuditList();
 
-  return audits.map(audit => {
-    // First, see if the audit is a Lighthouse core audit.
-    const coreAudit = coreList.find(a => a === `${audit}.js`);
-    let requirePath = `../audits/${audit}`;
-    if (!coreAudit) {
-      // Otherwise, attempt to find it elsewhere. This throws if not found.
-      requirePath = Runner.resolvePlugin(audit, configPath, 'audit');
+  return audits.map(nameOrAuditClass => {
+    let AuditClass;
+    if (typeof nameOrAuditClass === 'string') {
+      const name = nameOrAuditClass;
+      // See if the audit is a Lighthouse core audit.
+      const coreAudit = coreList.find(a => a === `${name}.js`);
+      let requirePath = `../audits/${name}`;
+      if (!coreAudit) {
+        // Otherwise, attempt to find it elsewhere. This throws if not found.
+        requirePath = Runner.resolvePlugin(name, configPath, 'audit');
+      }
+      AuditClass = require(requirePath);
+      assertValidAudit(AuditClass, name);
+    } else {
+      AuditClass = nameOrAuditClass;
+      assertValidAudit(AuditClass);
     }
-
-    const AuditClass = require(requirePath);
-
-    // Confirm that the audit appears valid.
-    assertValidAudit(audit, AuditClass);
 
     return AuditClass;
   });
 }
 
-function assertValidAudit(audit, auditDefinition) {
+function assertValidAudit(auditDefinition, auditName) {
+  auditName = auditName || (auditDefinition.meta && auditDefinition.meta.name) || 'audit';
   if (typeof auditDefinition.audit !== 'function') {
-    throw new Error(`${audit} has no audit() method.`);
+    throw new Error(`${auditName} has no audit() method.`);
   }
 
   if (typeof auditDefinition.meta.name !== 'string') {
-    throw new Error(`${audit} has no meta.name property, or the property is not a string.`);
+    throw new Error(`${auditName} has no meta.name property, or the property is not a string.`);
   }
 
   if (typeof auditDefinition.meta.category !== 'string') {
-    throw new Error(`${audit} has no meta.category property, or the property is not a string.`);
+    throw new Error(`${auditName} has no meta.category property, or the property is not a string.`);
   }
 
   if (typeof auditDefinition.meta.description !== 'string') {
-    throw new Error(`${audit} has no meta.description property, or the property is not a string.`);
+    throw new Error(
+      `${auditName} has no meta.description property, or the property is not a string.`
+    );
   }
 
   if (!Array.isArray(auditDefinition.meta.requiredArtifacts)) {
     throw new Error(
-      `${audit} has no meta.requiredArtifacts property, or the property is not an array.`
+      `${auditName} has no meta.requiredArtifacts property, or the property is not an array.`
     );
   }
 
   if (typeof auditDefinition.generateAuditResult !== 'function') {
     throw new Error(
-      `${audit} has no generateAuditResult() method. Did you inherit from the proper base class?`
+      `${auditName} has no generateAuditResult() method. ` +
+        'Did you inherit from the proper base class?'
     );
   }
 }
@@ -269,12 +277,27 @@ class Config {
     }
 
     // We don't want to mutate the original config object
-    configJSON = JSON.parse(JSON.stringify(configJSON));
+    let inputConfig = configJSON;
+    configJSON = JSON.parse(JSON.stringify(inputConfig));
+    // Copy arrays that could contain plugins to allow for programmatic
+    // injection of plugins.
+    if (Array.isArray(inputConfig.passes)) {
+      configJSON.passes.forEach((pass, i) => {
+        pass.gatherers = Array.from(inputConfig.passes[i].gatherers);
+      });
+    }
+    if (Array.isArray(inputConfig.audits)) {
+      configJSON.audits = Array.from(inputConfig.audits);
+    }
     // Store the directory of the config path, if one was provided.
     this._configDir = configPath ? path.dirname(configPath) : undefined;
 
     this._passes = configJSON.passes || null;
     this._auditResults = configJSON.auditResults || null;
+    if (this._auditResults && !Array.isArray(this._auditResults)) {
+      throw new Error('config.auditResults must be an array');
+    }
+
     this._aggregations = configJSON.aggregations || null;
 
     this._audits = requireAudits(configJSON.audits, this._configDir);

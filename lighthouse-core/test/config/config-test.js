@@ -20,6 +20,7 @@ const assert = require('assert');
 const path = require('path');
 const defaultConfig = require('../../config/default.json');
 const log = require('../../lib/log');
+const Gatherer = require('../../gather/gatherers/gatherer');
 const Audit = require('../../audits/audit');
 
 /* eslint-env mocha */
@@ -33,6 +34,30 @@ describe('Config', () => {
     assert.notEqual(config, newConfig);
   });
 
+  it('doesn\'t change directly injected plugins', () => {
+    class MyGatherer extends Gatherer {}
+    class MyAudit extends Audit {
+      static get meta() {
+        return {
+          name: 'MyAudit',
+          category: 'mine',
+          description: 'My audit',
+          requiredArtifacts: []
+        };
+      }
+      static audit() {}
+    }
+    const config = {
+      passes: [{
+        gatherers: [MyGatherer]
+      }],
+      audits: [MyAudit]
+    };
+    const newConfig = new Config(config);
+    assert.equal(MyGatherer, newConfig.passes[0].gatherers[0]);
+    assert.equal(MyAudit, newConfig.audits[0]);
+  });
+
   it('uses the default config when no config is provided', () => {
     const config = new Config();
     assert.deepStrictEqual(defaultConfig.aggregations, config.aggregations);
@@ -43,11 +68,11 @@ describe('Config', () => {
     const unlikelyPassName = 'unlikelyPassName';
     const configJson = {
       passes: [{
-        network: true,
+        recordNetwork: true,
         passName: unlikelyPassName,
         gatherers: []
       }, {
-        network: true,
+        recordNetwork: true,
         passName: unlikelyPassName,
         gatherers: []
       }],
@@ -71,10 +96,10 @@ describe('Config', () => {
   it('warns when traced twice with no passNames specified', () => {
     const configJson = {
       passes: [{
-        network: true,
+        recordNetwork: true,
         gatherers: []
       }, {
-        network: true,
+        recordNetwork: true,
         gatherers: []
       }],
       audits: []
